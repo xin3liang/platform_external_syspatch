@@ -424,7 +424,6 @@ static int patch(
     int ret = 0;
     int decompression_done;
 
-    fprintf(stderr, "Hello?\n");
     source->curblk = READ_CACHE[0]->data;
     source->onblk = READ_CACHE[0]->length;
     source->curblkno = 0;
