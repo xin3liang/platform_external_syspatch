@@ -30,7 +30,7 @@ rm a_to_b.patch.orig
 
 # run the test
 STARTTIME=$(date +%s)
-$ANDROID_BUILD_TOP/out/host/linux-x86/bin/syspatch from.img a_to_b.patch.xz temp.img
+$ANDROID_BUILD_TOP/out/host/linux-x86/bin/syspatch_host from.img a_to_b.patch.xz temp.img
 ENDTIME=$(date +%s)
 cmp to.img temp.img
 if [ $? -ne 0 ]; then
@@ -39,7 +39,7 @@ else
 	echo "Different file test passed, took $((ENDTIME - STARTTIME)) seconds"
 fi
 STARTTIME=$(date +%s)
-/usr/bin/time -v $ANDROID_BUILD_TOP/out/host/linux-x86/bin/syspatch from.img a_to_b.patch.xz from.img
+/usr/bin/time -v $ANDROID_BUILD_TOP/out/host/linux-x86/bin/syspatch_host from.img a_to_b.patch.xz from.img
 ENDTIME=$(date +%s)
 cmp from.img to.img
 if [ $? -ne 0 ]; then
