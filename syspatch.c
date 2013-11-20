@@ -35,22 +35,25 @@
 // SOURCE_WINDOW_SIZE probably don't make any sense, but this is untested. The
 // primary tradeoff made here is between memory and extra calls to the decoder.
 #define XZ_OUTPUT_SIZE (1U<<23)
+// BLOCK_SIZE is the base I/O size for xdelta. See the variables below for how
+// this impacts performance.
+#define BLOCK_SIZE (1U<<23)
 // TARGET_WINDOW_SIZE determines how large writes to the target file are. There
 // isn't a lot of science behind this yet, excepting the notes about the write
 // queue below.
-#define TARGET_WINDOW_SIZE (1U<<23)
+#define TARGET_WINDOW_SIZE (1 * BLOCK_SIZE)
 // SOURCE_WINDOW_SIZE is one of the primary tunables. Higher values increase
 // compression ratios and improve decoder speed, but consume more memory.
-#define SOURCE_WINDOW_SIZE (1U<<26)
+#define SOURCE_WINDOW_SIZE (8 * BLOCK_SIZE)
 // WRITE_QUEUE_LENGTH * TARGET_WINDOW_SIZE must be >= SOURCE_WINDOW_SIZE / 2.
 // This ensures that writes will always happen behind an area where a read
 // might occur. This is enforced by the READ_FRONTIER check.
 #define WRITE_QUEUE_LENGTH (4)
 // READ_CACHE_LENGTH is defined based on the acceptability of a time/memory
-// tradeoff. A value of at least one is necessary to not completely suck, and
-// two or higher is recommended. Higher than 8 will probably not yield
+// tradeoff. A value of at least 6 is necessary to not completely suck, and
+// 8 or higher is recommended. Higher than 16 will probably not yield
 // reasonable returns for realistic patches.
-#define READ_CACHE_LENGTH (2)
+#define READ_CACHE_LENGTH (8)
 
 static uint8_t in[XZ_OUTPUT_SIZE];
 static uint8_t out[XZ_OUTPUT_SIZE];
@@ -66,7 +69,7 @@ typedef struct SourceRead SourceRead;
 struct SourceRead {
     size_t blkno;
     size_t length;
-    uint8_t data[SOURCE_WINDOW_SIZE];
+    uint8_t data[BLOCK_SIZE];
 };
 
 static SourceRead* READ_CACHE[READ_CACHE_LENGTH];
@@ -111,7 +114,7 @@ static int add_to_read_cache(SourceRead *source_read) {
 static size_t read_source_file(uint8_t *data, FILE *file) {
     size_t size;
     fflush(file);
-    size = fread((void*)data, 1, SOURCE_WINDOW_SIZE, file);
+    size = fread((void*)data, 1, BLOCK_SIZE, file);
     fflush(file);
     return size;
 }
@@ -333,7 +336,7 @@ static int setup_xdelta_source( xd3_source *source,
     memset(source, 0, sizeof(*source));
     source->name = "source";
     source->ioh = source_file;
-    source->blksize = SOURCE_WINDOW_SIZE;
+    source->blksize = BLOCK_SIZE;
     source->curblkno = 0;
     source->curblk = NULL;
     source->onblk = 0;
