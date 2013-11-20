@@ -32,7 +32,7 @@ rm a_to_b.patch
 rm a_to_b.patch.orig
 
 # run the test
-$ANDROID_BUILD_TOP/out/host/linux-x86/bin/syspatch a a_to_b.patch.xz a
+$ANDROID_BUILD_TOP/out/host/linux-x86/bin/syspatch_host a a_to_b.patch.xz a
 cmp a b
 if [ $? -ne 0 ]; then
 	echo "Test failed"
