@@ -477,7 +477,7 @@ out:
 //============================================================================//
 //                                 Main Logic                                 //
 //============================================================================//
-static int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file) {
+int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file) {
     XZContext xz_context;
     xd3_stream stream;
     xd3_config config;
@@ -505,64 +505,4 @@ static int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file) {
     teardown_write_queue();
     teardown_xdelta_stream(&stream);
     return 0;
-}
-
-//============================================================================//
-//                                Test Harness                                //
-//============================================================================//
-
-static int usage(char *progname) {
-    return fprintf(stderr, "%s: <source> <patch> <target>", progname);
-}
-
-static int parse_arguments(
-        int argc,
-        char **argv,
-        FILE **source_file,
-        FILE **patch_file,
-        FILE **target_file) {
-
-    if (argc < 4) {
-        usage(argv[1]);
-        return -1;
-    }
-
-    *source_file = fopen(argv[1], "r");
-    if (*source_file == NULL) {
-        fprintf(stderr, "Error opening source file: %s\n", strerror(errno));
-        return -1;
-    }
-
-    *patch_file = fopen(argv[2], "r");
-    if (*patch_file == NULL) {
-        fprintf(stderr, "Error opening patch file: %s\n", strerror(errno));
-        return -1;
-    }
-
-    *target_file = fopen(argv[3], "r+");
-    if (*target_file == NULL) {
-        fprintf(stderr, "Error opening target file: %s\n", strerror(errno));
-        return -1;
-    }
-
-    return 0;
-}
-
-int main(int argc, char **argv)
-{
-    int retval;
-    FILE *source_file;
-    FILE *patch_file;
-    FILE *target_file;
-
-    if (parse_arguments(argc, argv, &source_file, &patch_file, &target_file))
-        return 1;
-
-    retval = syspatch(source_file, patch_file, target_file);
-
-    fclose(source_file);
-    fclose(patch_file);
-    fclose(target_file);
-
-    return (retval != 0);
 }
