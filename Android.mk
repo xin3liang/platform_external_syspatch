@@ -16,6 +16,7 @@ LOCAL_SRC_FILES := syspatch.c
 LOCAL_C_INCLUDES += external/xdelta3
 LOCAL_C_INCLUDES += external/lzma/xz-embedded
 LOCAL_STATIC_LIBRARIES := libxz libxdelta3
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)

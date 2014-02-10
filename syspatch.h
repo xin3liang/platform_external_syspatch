@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file);
+int syspatch(FILE *source_file, unsigned char *patch_data, size_t patch_len, FILE *target_file);
 
 #ifdef __cplusplus
 }

@@ -55,7 +55,6 @@
 // reasonable returns for realistic patches.
 #define READ_CACHE_LENGTH (8)
 
-static uint8_t in[XZ_OUTPUT_SIZE];
 static uint8_t out[XZ_OUTPUT_SIZE];
 
 typedef struct TargetWrite TargetWrite;
@@ -172,18 +171,6 @@ static int process_source_data(xd3_source *source) {
 }
 
 //============================================================================//
-//                                Patch I/O                                   //
-//============================================================================//
-
-static int read_compressed_input(XZContext *context, FILE *infile) {
-    if (context->b.in_pos == context->b.in_size) {
-        context->b.in_size = fread(in, 1, XZ_OUTPUT_SIZE, infile);
-        context->b.in_pos = 0;
-    }
-    return 0;
-}
-
-//============================================================================//
 //                                 Target I/O                                 //
 //============================================================================//
 
@@ -286,10 +273,10 @@ static int teardown_write_queue() {
 //============================================================================//
 //                        Decompressor Setup and Teardown                     //
 //============================================================================//
-static int setup_xz_buf(struct xz_buf *b) {
-    b->in = in;
+static int setup_xz_buf(struct xz_buf *b, unsigned char* input_data, size_t input_len) {
+    b->in = input_data;
     b->in_pos = 0;
-    b->in_size = 0;
+    b->in_size = input_len;
     b->out = out;
     b->out_pos = 0;
     b->out_size = XZ_OUTPUT_SIZE;
@@ -303,10 +290,10 @@ static int setup_xz_dec(struct xz_dec **s) {
     return 0;
 }
 
-static int setup_xz_context(XZContext *context) {
+static int setup_xz_context(XZContext *context, unsigned char* patch_data, size_t patch_len) {
     xz_crc32_init();
     setup_xz_dec(&context->s);
-    if (setup_xz_buf(&context->b) < 0)
+    if (setup_xz_buf(&context->b, patch_data, patch_len) < 0)
         return -1;
     return 0;
 }
@@ -359,19 +346,17 @@ static void teardown_xdelta_stream(xd3_stream *stream) {
 //                             Decompression Loop                             //
 //============================================================================//
 
-static int run_decompressor(XZContext *context, FILE *infile) {
+static int run_decompressor(XZContext *context) {
     context->ret = xz_dec_run(context->s, &context->b);
-    read_compressed_input(context, infile);
     return context->b.out_pos == XZ_OUTPUT_SIZE;
 }
 
 static int decompress_into_buffer(
         XZContext *context,
-        FILE *infile,
         int *buffer_filled,
         int *done) {
 
-    *buffer_filled = run_decompressor(context, infile);
+    *buffer_filled = run_decompressor(context);
     if (context->ret == XZ_OK)
         return 0;
 
@@ -394,20 +379,19 @@ static int decompress_into_buffer(
     }
 }
 
-static int decompress(XZContext *context, FILE *patch_file) {
+static int decompress(XZContext *context) {
     int done = 0;
     int filled = 0;
     while (!filled) {
-        if (decompress_into_buffer(context, patch_file, &filled, &done) < 0)
+        if (decompress_into_buffer(context, &filled, &done) < 0)
             return -1;
     }
     return done;
 }
 
 static int decompress_patch(XZContext *context,
-                            FILE *patch_file,
                             xd3_stream *stream) {
-    int done = decompress(context, patch_file);
+    int done = decompress(context);
     xd3_avail_input(stream, out, context->b.out_pos);
     context->b.out_pos = 0;
     return done;
@@ -421,7 +405,6 @@ static int patch(
         XZContext *context,
         xd3_stream *stream,
         xd3_source *source,
-        FILE *patch_file,
         FILE *target_file) {
 
     int ret = 0;
@@ -432,7 +415,7 @@ static int patch(
     source->curblkno = 0;
 
     do {
-        decompression_done = decompress_patch(context, patch_file, stream);
+        decompression_done = decompress_patch(context, stream);
         if (decompression_done < 0)
             goto err;
         if (decompression_done)
@@ -477,7 +460,7 @@ out:
 //============================================================================//
 //                                 Main Logic                                 //
 //============================================================================//
-int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file) {
+int syspatch(FILE *source_file, unsigned char* patch_data, size_t patch_len, FILE *target_file) {
     XZContext xz_context;
     xd3_stream stream;
     xd3_config config;
@@ -489,7 +472,7 @@ int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file) {
     if (setup_write_queue() != 0)
         return -1;
 
-    if (setup_xz_context(&xz_context) != 0)
+    if (setup_xz_context(&xz_context, patch_data, patch_len) != 0)
         return -1;
 
     if (setup_xdelta_config(&config, &stream) != 0)
@@ -498,7 +481,7 @@ int syspatch(FILE *source_file, FILE *patch_file, FILE *target_file) {
     if (setup_xdelta_source(&source, &stream, source_file) != 0)
         return -1;
 
-    if (patch(&xz_context, &stream, &source, patch_file, target_file) != 0)
+    if (patch(&xz_context, &stream, &source, target_file) != 0)
         return -1;
 
     teardown_read_cache();
