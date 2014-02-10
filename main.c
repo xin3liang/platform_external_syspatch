@@ -26,7 +26,7 @@
 #include <syspatch.h>
 
 static int usage(char *progname) {
-    return fprintf(stderr, "%s: <source> <patch> <target>", progname);
+    return fprintf(stderr, "%s: <source> <patch> <target>\n", progname);
 }
 
 static int parse_arguments(
@@ -37,7 +37,7 @@ static int parse_arguments(
         FILE **target_file) {
 
     if (argc < 4) {
-        usage(argv[1]);
+        usage(argv[0]);
         return -1;
     }
 
