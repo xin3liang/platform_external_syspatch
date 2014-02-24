@@ -2,7 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := syspatch_host
-LOCAL_SRC_FILES := syspatch.c main.c
+LOCAL_SRC_FILES := syspatch.c mapio.c main.c
 LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_MODULE_TAGS := optional
 LOCAL_C_INCLUDES += external/xdelta3
@@ -12,7 +12,7 @@ include $(BUILD_HOST_EXECUTABLE)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libsyspatch
-LOCAL_SRC_FILES := syspatch.c
+LOCAL_SRC_FILES := syspatch.c mapio.c
 LOCAL_C_INCLUDES += external/xdelta3
 LOCAL_C_INCLUDES += external/lzma/xz-embedded
 LOCAL_STATIC_LIBRARIES := libxz libxdelta3

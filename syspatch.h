@@ -19,11 +19,15 @@
 
 #include <stdio.h>
 
+#include "mapio.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int syspatch(FILE *source_file, unsigned char *patch_data, size_t patch_len, FILE *target_file);
+int syspatch(FILE *source_file, DontCareMap* source_map,
+             unsigned char *patch_data, size_t patch_len,
+             FILE *target_file, DontCareMap* target_map);
 
 #ifdef __cplusplus
 }

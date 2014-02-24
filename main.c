@@ -25,6 +25,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <fcntl.h>
 
 #include <syspatch.h>
@@ -90,7 +91,19 @@ int main(int argc, char **argv)
     if (parse_arguments(argc, argv, &source_file, &patch_data, &patch_len, &target_file))
         return 1;
 
-    retval = syspatch(source_file, patch_data, patch_len, target_file);
+    DontCareMap source_map;
+    int source_regions[2] = { INT_MAX, 0 };
+    source_map.block_size = 4096;
+    source_map.region_count = 2;
+    source_map.regions = source_regions;
+
+    DontCareMap target_map;
+    int target_regions[2] = { INT_MAX, 0 };
+    target_map.block_size = 4096;
+    target_map.region_count = 2;
+    target_map.regions = target_regions;
+
+    retval = syspatch(source_file, &source_map, patch_data, patch_len, target_file, &target_map);
 
     fclose(source_file);
     fclose(target_file);

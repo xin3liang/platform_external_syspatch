@@ -26,6 +26,8 @@
 #include "xdelta3.c"
 #include "xdelta3.h"
 #include "xz.h"
+#include "syspatch.h"
+#include "mapio.h"
 
 // XZ_DICT_SIZE represents the size of the dictionary used for XZ decompression.
 // Higher values improve compression, but consume more memory.
@@ -53,7 +55,7 @@
 // tradeoff. A value of at least 6 is necessary to not completely suck, and
 // 8 or higher is recommended. Higher than 16 will probably not yield
 // reasonable returns for realistic patches.
-#define READ_CACHE_LENGTH (8)
+#define READ_CACHE_LENGTH (16)
 
 static uint8_t out[XZ_OUTPUT_SIZE];
 
@@ -84,7 +86,7 @@ struct XZContext {
 
 static TargetWrite* WRITE_QUEUE[WRITE_QUEUE_LENGTH];
 static size_t TARGET_WINDOWS_WRITTEN;
-static size_t READ_FRONTIER;
+static ssize_t READ_FRONTIER;
 
 //============================================================================//
 //                                 Source I/O                                 //
@@ -110,34 +112,23 @@ static int add_to_read_cache(SourceRead *source_read) {
     return 0;
 }
 
-static size_t read_source_file(uint8_t *data, FILE *file) {
-    size_t size;
-    fflush(file);
-    size = fread((void*)data, 1, BLOCK_SIZE, file);
-    fflush(file);
-    return size;
-}
-
-static int check_read(size_t pos, size_t frontier) {
-    if (pos < frontier) {
-        fprintf(stderr, "Read past frontier: %zu > %zu\n", pos, frontier);
-        return -1;
-    }
-    return 0;
-}
-
 static SourceRead *get_source_window_from_file(xd3_source *source) {
     size_t read_position = source->getblkno * source->blksize;
     SourceRead *source_read = malloc(sizeof(SourceRead));
     memset(source_read, 0, sizeof(SourceRead));
-    if (check_read(read_position, READ_FRONTIER) < 0)
-        return NULL;
-    if (fseek(source->ioh, read_position, SEEK_SET) != 0) {
+    if (seek_with_map(read_position, source->ioh) != 0) {
         fprintf(stderr, "Couldn't seek to %zu\n", read_position);
         return NULL;
     }
+
+    MapState* state = (MapState*) source->ioh;
     source_read->blkno = source->getblkno;
-    source_read->length = read_source_file(source_read->data, source->ioh);
+    source_read->length = read_with_map(source_read->data, sizeof(source_read->data), state);
+    if (ftell(state->f) < READ_FRONTIER) {
+        fprintf(stderr, "read past frontier: %ld > %zu\n", ftell(state->f), READ_FRONTIER);
+        return NULL;
+    }
+
     return source_read;
 }
 
@@ -174,16 +165,22 @@ static int process_source_data(xd3_source *source) {
 //                                 Target I/O                                 //
 //============================================================================//
 
-static int write_target(TargetWrite *tgt, FILE *target_file) {
+static int write_target(TargetWrite *tgt, MapState *target_state) {
     if (tgt->length > 0) {
-        if (fseek(target_file, tgt->start, SEEK_SET) != 0)
+        if (seek_with_map(tgt->start, target_state) != 0) {
+            printf("failed to seek\n");
             return -1;
-        if (fwrite(tgt->data, 1, tgt->length, target_file) != tgt->length)
+        }
+        if (write_with_map(tgt->data, tgt->length, target_state) != tgt->length) {
+            printf("failed to write\n");
             return -1;
-        if (fflush(target_file) != 0)
+        }
+        if (fflush(target_state->f) != 0) {
+            printf("failed to flush\n");
             return -1;
+        }
     }
-    READ_FRONTIER = ftell(target_file);
+    READ_FRONTIER = ftell(target_state->f);
     return 0;
 }
 
@@ -197,9 +194,9 @@ static int stream_to_target_write(xd3_stream *stream, TargetWrite *tgt) {
     return 0;
 }
 
-static int advance_target_buffer(xd3_stream *stream, FILE *target_file) {
+static int advance_target_buffer(xd3_stream *stream, MapState *target_state) {
     TargetWrite *tgt = WRITE_QUEUE[TARGET_WINDOWS_WRITTEN % WRITE_QUEUE_LENGTH];
-    if (write_target(tgt, target_file) != 0)
+    if (write_target(tgt, target_state) != 0)
         return -1;
     if (stream_to_target_write(stream, tgt) != 0)
         return -1;
@@ -207,7 +204,7 @@ static int advance_target_buffer(xd3_stream *stream, FILE *target_file) {
     return 0;
 }
 
-static int process_target_data(xd3_stream *stream, FILE *target, int force) {
+static int process_target_data(xd3_stream *stream, MapState *target, int force) {
     size_t iters = (force == 0) + (force * WRITE_QUEUE_LENGTH);
     while (iters) {
         if (advance_target_buffer(stream, target) < 0)
@@ -221,7 +218,7 @@ static int process_target_data(xd3_stream *stream, FILE *target, int force) {
 //                          Read Cache Setup and Teardown                     //
 //============================================================================//
 
-static int setup_read_cache(FILE *source_file) {
+static int setup_read_cache(MapState* source_state) {
     int i = 0;
     size_t length;
     for (i; i < READ_CACHE_LENGTH; i++) {
@@ -229,7 +226,7 @@ static int setup_read_cache(FILE *source_file) {
         if (READ_CACHE[i] == NULL)
             return -1;
         READ_CACHE[i]->blkno = i;
-        length = read_source_file(READ_CACHE[i]->data, source_file);
+        length = read_with_map(READ_CACHE[i]->data, sizeof(READ_CACHE[i]->data), source_state);
         READ_CACHE[i]->length = length;
     }
     SOURCE_WINDOWS_CACHED = READ_CACHE_LENGTH;
@@ -318,11 +315,11 @@ static int setup_xdelta_config(xd3_config *config, xd3_stream *stream) {
 
 static int setup_xdelta_source( xd3_source *source,
                                 xd3_stream *stream,
-                                FILE *source_file) {
+                                MapState *source_state) {
     int ret;
     memset(source, 0, sizeof(*source));
     source->name = "source";
-    source->ioh = source_file;
+    source->ioh = source_state;
     source->blksize = BLOCK_SIZE;
     source->curblkno = 0;
     source->curblk = NULL;
@@ -405,7 +402,7 @@ static int patch(
         XZContext *context,
         xd3_stream *stream,
         xd3_source *source,
-        FILE *target_file) {
+        MapState *target_state) {
 
     int ret = 0;
     int decompression_done;
@@ -426,7 +423,7 @@ process:
             case XD3_INPUT:
                 continue;
             case XD3_OUTPUT:
-                if (process_target_data(stream, target_file, 0) < 0)
+                if (process_target_data(stream, target_state, 0) < 0)
                     goto err;
                 goto process;
             case XD3_GETSRCBLK:
@@ -444,7 +441,7 @@ process:
         }
     } while (!decompression_done);
 
-    process_target_data(stream, target_file, 1);
+    process_target_data(stream, target_state, 1);
 
     ret = 0;
     goto out;
@@ -460,13 +457,24 @@ out:
 //============================================================================//
 //                                 Main Logic                                 //
 //============================================================================//
-int syspatch(FILE *source_file, unsigned char* patch_data, size_t patch_len, FILE *target_file) {
+
+
+
+int syspatch(FILE *source_file, DontCareMap* source_map,
+             unsigned char* patch_data, size_t patch_len,
+             FILE *target_file, DontCareMap* target_map) {
     XZContext xz_context;
     xd3_stream stream;
     xd3_config config;
     xd3_source source;
 
-    if (setup_read_cache(source_file) != 0)
+    MapState source_state;
+    source_state.map = source_map;
+    source_state.cr = 0;
+    source_state.so_far = 0;
+    source_state.f = source_file;
+
+    if (setup_read_cache(&source_state) != 0)
         return -1;
 
     if (setup_write_queue() != 0)
@@ -478,10 +486,16 @@ int syspatch(FILE *source_file, unsigned char* patch_data, size_t patch_len, FIL
     if (setup_xdelta_config(&config, &stream) != 0)
         return -1;
 
-    if (setup_xdelta_source(&source, &stream, source_file) != 0)
+    if (setup_xdelta_source(&source, &stream, &source_state) != 0)
         return -1;
 
-    if (patch(&xz_context, &stream, &source, target_file) != 0)
+    MapState target_state;
+    target_state.map = target_map;
+    target_state.cr = 0;
+    target_state.so_far = 0;
+    target_state.f = target_file;
+
+    if (patch(&xz_context, &stream, &source, &target_state) != 0)
         return -1;
 
     teardown_read_cache();
