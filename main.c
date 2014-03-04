@@ -30,19 +30,43 @@
 
 #include <syspatch.h>
 
+static int default_regions[2] = { INT_MAX, 0 };
+
 static int usage(char *progname) {
-    return fprintf(stderr, "%s: <source> <patch> <target>\n", progname);
+    return fprintf(stderr,
+                   "%s: <source> <patch> <target>\n"
+                   "%*s  <source> <sourcemap> <patch> <target> <targetmap>\n",
+                   progname, strlen(progname), "");
+}
+
+static int parse_dont_care_map(DontCareMap* map, FILE* f) {
+    if (fscanf(f, "%zu %d", &(map->block_size), &(map->region_count)) != 2) {
+        fprintf(stderr, "failed to parse map header\n");
+        return -1;
+    }
+
+    map->regions = (int*)malloc(map->region_count * sizeof(int));
+    int i;
+    for (i = 0; i < map->region_count; ++i) {
+        if (fscanf(f, "%d", map->regions + i) != 1) {
+            fprintf(stderr, "failed to parse map region\n");
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static int parse_arguments(
         int argc,
         char **argv,
         FILE **source_file,
+        DontCareMap *source_map,
         unsigned char **patch_data,
         size_t *patch_len,
-        FILE **target_file) {
+        FILE **target_file,
+        DontCareMap *target_map) {
 
-    if (argc < 4) {
+    if (argc != 4 && argc != 6) {
         usage(argv[0]);
         return -1;
     }
@@ -53,7 +77,17 @@ static int parse_arguments(
         return -1;
     }
 
-    int fd = open(argv[2], O_RDONLY);
+    if (argc == 6) {
+        FILE* f = fopen(argv[2], "r");
+        if (parse_dont_care_map(source_map, f) < 0) return -1;
+        fclose(f);
+    } else {
+        source_map->block_size = 4096;
+        source_map->region_count = 2;
+        source_map->regions = default_regions;
+    }
+
+    int fd = open(argv[argc == 6 ? 3 : 2], O_RDONLY);
     if (fd < 0) {
         fprintf(stderr, "Error opening patch file: %s\n", strerror(errno));
         return -1;
@@ -71,10 +105,20 @@ static int parse_arguments(
     *patch_len = sb.st_size;
     close(fd);
 
-    *target_file = fopen(argv[3], "r+");
+    *target_file = fopen(argv[argc == 6 ? 4 : 3], "r+");
     if (*target_file == NULL) {
         fprintf(stderr, "Error opening target file: %s\n", strerror(errno));
         return -1;
+    }
+
+    if (argc == 6) {
+        FILE* f = fopen(argv[5], "r");
+        if (parse_dont_care_map(target_map, f) < 0) return -1;
+        fclose(f);
+    } else {
+        target_map->block_size = 4096;
+        target_map->region_count = 2;
+        target_map->regions = default_regions;
     }
 
     return 0;
@@ -88,20 +132,12 @@ int main(int argc, char **argv)
     size_t patch_len;
     FILE *target_file;
 
-    if (parse_arguments(argc, argv, &source_file, &patch_data, &patch_len, &target_file))
-        return 1;
-
     DontCareMap source_map;
-    int source_regions[2] = { INT_MAX, 0 };
-    source_map.block_size = 4096;
-    source_map.region_count = 2;
-    source_map.regions = source_regions;
-
     DontCareMap target_map;
-    int target_regions[2] = { INT_MAX, 0 };
-    target_map.block_size = 4096;
-    target_map.region_count = 2;
-    target_map.regions = target_regions;
+
+    if (parse_arguments(argc, argv, &source_file, &source_map,
+                        &patch_data, &patch_len, &target_file, &target_map))
+        return 1;
 
     retval = syspatch(source_file, &source_map, patch_data, patch_len, target_file, &target_map);
 
