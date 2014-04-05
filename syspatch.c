@@ -124,7 +124,7 @@ static SourceRead *get_source_window_from_file(xd3_source *source) {
     MapState* state = (MapState*) source->ioh;
     source_read->blkno = source->getblkno;
     source_read->length = read_with_map(source_read->data, sizeof(source_read->data), state);
-    if (ftell(state->f) < READ_FRONTIER) {
+    if (read_position < READ_FRONTIER) {
         fprintf(stderr, "read past frontier: %ld > %zu\n", ftell(state->f), READ_FRONTIER);
         return NULL;
     }
@@ -180,7 +180,7 @@ static int write_target(TargetWrite *tgt, MapState *target_state) {
             return -1;
         }
     }
-    READ_FRONTIER = ftell(target_state->f);
+    READ_FRONTIER = tgt->start + tgt->length;
     return 0;
 }
 
