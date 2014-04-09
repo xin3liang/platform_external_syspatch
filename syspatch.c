@@ -124,8 +124,8 @@ static SourceRead *get_source_window_from_file(xd3_source *source) {
     MapState* state = (MapState*) source->ioh;
     source_read->blkno = source->getblkno;
     source_read->length = read_with_map(source_read->data, sizeof(source_read->data), state);
-    if (read_position < READ_FRONTIER) {
-        fprintf(stderr, "read past frontier: %ld > %zu\n", ftell(state->f), READ_FRONTIER);
+    if (ftell(state->f) < READ_FRONTIER) {
+        printf("read past frontier: %ld < %zu\n", ftell(state->f), READ_FRONTIER);
         return NULL;
     }
 
