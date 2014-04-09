@@ -74,7 +74,6 @@ struct SourceRead {
 };
 
 static SourceRead* READ_CACHE[READ_CACHE_LENGTH];
-static size_t SOURCE_WINDOWS_CACHED;
 
 typedef struct XZContext XZContext;
 struct XZContext {
@@ -231,7 +230,6 @@ static int setup_read_cache(MapState* source_state) {
         length = read_with_map(READ_CACHE[i]->data, sizeof(READ_CACHE[i]->data), source_state);
         READ_CACHE[i]->length = length;
     }
-    SOURCE_WINDOWS_CACHED = READ_CACHE_LENGTH;
     return 0;
 }
 
