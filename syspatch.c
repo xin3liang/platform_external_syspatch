@@ -196,10 +196,12 @@ static int advance_target_buffer(xd3_stream *stream, MapState *target_state) {
     if (tgt->length) {
         if (write_target(tgt, target_state) != 0)
             return -1;
-        TARGET_WINDOWS_WRITTEN += 1;
     }
     if (stream_to_target_write(stream, tgt) != 0)
         return -1;
+    if (tgt->length) {
+        TARGET_WINDOWS_WRITTEN += 1;
+    }
     return 0;
 }
 
